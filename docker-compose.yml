@@ -5,7 +5,7 @@ services:
     build: .
     container_name: droid2api
     ports:
-      - "3000:3000"
+      - "4323:3000"
     environment:
       # 认证配置（按优先级选择其一）：
       # 最高优先级：固定API密钥（推荐用于生产环境）
