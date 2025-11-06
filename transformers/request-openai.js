@@ -1,5 +1,6 @@
 import { logDebug } from '../logger.js';
 import { getSystemPrompt, getModelReasoning, getUserAgent } from '../config.js';
+import { filterMessages, filterText } from '../message-filter.js';
 
 export function transformToOpenAI(openaiRequest) {
   logDebug('Transforming OpenAI request to target OpenAI format');
@@ -22,9 +23,12 @@ export function transformToOpenAI(openaiRequest) {
     targetRequest.max_output_tokens = openaiRequest.max_completion_tokens;
   }
 
+  // Filter messages to replace AI agent names with Droid
+  const filteredMessages = filterMessages(openaiRequest.messages);
+
   // Transform messages to input
-  if (openaiRequest.messages && Array.isArray(openaiRequest.messages)) {
-    for (const msg of openaiRequest.messages) {
+  if (filteredMessages && Array.isArray(filteredMessages)) {
+    for (const msg of filteredMessages) {
       const inputMsg = {
         role: msg.role,
         content: []
@@ -73,7 +77,7 @@ export function transformToOpenAI(openaiRequest) {
 
   // Extract system message as instructions and prepend system prompt
   const systemPrompt = getSystemPrompt();
-  const systemMessage = openaiRequest.messages?.find(m => m.role === 'system');
+  const systemMessage = filteredMessages?.find(m => m.role === 'system');
   
   if (systemMessage) {
     let userInstructions = '';
@@ -85,7 +89,8 @@ export function transformToOpenAI(openaiRequest) {
         .map(p => p.text)
         .join('\n');
     }
-    targetRequest.instructions = systemPrompt + userInstructions;
+    // Filter the user instructions
+    targetRequest.instructions = systemPrompt + filterText(userInstructions);
     targetRequest.input = targetRequest.input.filter(m => m.role !== 'system');
   } else if (systemPrompt) {
     // If no user-provided system message, just add the system prompt

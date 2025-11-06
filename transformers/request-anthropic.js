@@ -1,5 +1,6 @@
 import { logDebug } from '../logger.js';
 import { getSystemPrompt, getModelReasoning, getUserAgent } from '../config.js';
+import { filterMessages, filterSystemContent } from '../message-filter.js';
 
 export function transformToAnthropic(openaiRequest) {
   logDebug('Transforming OpenAI request to Anthropic format');
@@ -23,11 +24,14 @@ export function transformToAnthropic(openaiRequest) {
     anthropicRequest.max_tokens = 4096;
   }
 
+  // Filter messages to replace AI agent names with Droid
+  const filteredMessages = filterMessages(openaiRequest.messages);
+
   // Extract system message(s) and transform other messages
   let systemContent = [];
   
-  if (openaiRequest.messages && Array.isArray(openaiRequest.messages)) {
-    for (const msg of openaiRequest.messages) {
+  if (filteredMessages && Array.isArray(filteredMessages)) {
+    for (const msg of filteredMessages) {
       // Handle system messages separately
       if (msg.role === 'system') {
         if (typeof msg.content === 'string') {
@@ -93,8 +97,9 @@ export function transformToAnthropic(openaiRequest) {
         text: systemPrompt
       });
     }
-    // Add user-provided system content
-    anthropicRequest.system.push(...systemContent);
+    // Add user-provided system content (filtered)
+    const filteredSystemContent = filterSystemContent(systemContent);
+    anthropicRequest.system.push(...filteredSystemContent);
   }
 
   // Transform tools if present

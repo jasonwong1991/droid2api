@@ -9,6 +9,7 @@ import { AnthropicResponseTransformer } from './transformers/response-anthropic.
 import { OpenAIResponseTransformer } from './transformers/response-openai.js';
 import { getApiKey } from './auth.js';
 import { getNextProxyAgent } from './proxy-manager.js';
+import { filterMessages, filterText, filterSystemContent } from './message-filter.js';
 
 const router = express.Router();
 
@@ -288,17 +289,23 @@ async function handleDirectResponses(req, res) {
     // 获取 headers
     const headers = getOpenAIHeaders(authHeader, clientHeaders);
 
+    // Filter messages and instructions to replace AI agent names with Droid
+    const filteredInput = filterMessages(openaiRequest.input);
+
     // 注入系统提示到 instructions 字段，并更新重定向后的模型ID
     const systemPrompt = getSystemPrompt();
-    const modifiedRequest = { ...openaiRequest, model: modelId };
+    const modifiedRequest = { ...openaiRequest, model: modelId, input: filteredInput };
     if (systemPrompt) {
-      // 如果已有 instructions，则在前面添加系统提示
+      // 如果已有 instructions，则在前面添加系统提示（并过滤）
       if (modifiedRequest.instructions) {
-        modifiedRequest.instructions = systemPrompt + modifiedRequest.instructions;
+        modifiedRequest.instructions = systemPrompt + filterText(modifiedRequest.instructions);
       } else {
         // 否则直接设置系统提示
         modifiedRequest.instructions = systemPrompt;
       }
+    } else if (modifiedRequest.instructions) {
+      // 没有系统提示，但有 instructions，仍需过滤
+      modifiedRequest.instructions = filterText(modifiedRequest.instructions);
     }
 
     // 处理reasoning字段
@@ -431,15 +438,18 @@ async function handleDirectMessages(req, res) {
     const isStreaming = anthropicRequest.stream === true;
     const headers = getAnthropicHeaders(authHeader, clientHeaders, isStreaming, modelId);
 
+    // Filter messages to replace AI agent names with Droid
+    const filteredMessages = filterMessages(anthropicRequest.messages);
+
     // 注入系统提示到 system 字段，并更新重定向后的模型ID
     const systemPrompt = getSystemPrompt();
-    const modifiedRequest = { ...anthropicRequest, model: modelId };
+    const modifiedRequest = { ...anthropicRequest, model: modelId, messages: filteredMessages };
     if (systemPrompt) {
       if (modifiedRequest.system && Array.isArray(modifiedRequest.system)) {
-        // 如果已有 system 数组，则在最前面插入系统提示
+        // 如果已有 system 数组，则在最前面插入系统提示（并过滤用户提供的内容）
         modifiedRequest.system = [
           { type: 'text', text: systemPrompt },
-          ...modifiedRequest.system
+          ...filterSystemContent(modifiedRequest.system)
         ];
       } else {
         // 否则创建新的 system 数组
@@ -447,6 +457,9 @@ async function handleDirectMessages(req, res) {
           { type: 'text', text: systemPrompt }
         ];
       }
+    } else if (modifiedRequest.system) {
+      // 没有系统提示，但有 system 内容，仍需过滤
+      modifiedRequest.system = filterSystemContent(modifiedRequest.system);
     }
 
     // 处理thinking字段
@@ -578,11 +591,19 @@ async function handleCountTokens(req, res) {
     const clientHeaders = req.headers;
     const headers = getAnthropicHeaders(authHeader, clientHeaders, false, modelId);
 
+    // Filter messages to replace AI agent names with Droid
+    const filteredMessages = filterMessages(anthropicRequest.messages);
+
     // 构建 count_tokens 端点 URL
     const countTokensUrl = endpoint.base_url.replace('/v1/messages', '/v1/messages/count_tokens');
 
-    // 更新请求体中的模型ID为重定向后的ID
-    const modifiedRequest = { ...anthropicRequest, model: modelId };
+    // 更新请求体中的模型ID为重定向后的ID，并使用过滤后的消息
+    const modifiedRequest = { ...anthropicRequest, model: modelId, messages: filteredMessages };
+    
+    // 过滤 system 内容
+    if (modifiedRequest.system) {
+      modifiedRequest.system = filterSystemContent(modifiedRequest.system);
+    }
 
     logInfo(`Forwarding to count_tokens endpoint: ${countTokensUrl}`);
     logRequest('POST', countTokensUrl, headers, modifiedRequest);

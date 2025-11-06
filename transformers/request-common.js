@@ -1,12 +1,17 @@
 import { logDebug } from '../logger.js';
 import { getSystemPrompt, getUserAgent } from '../config.js';
+import { filterMessages, filterText } from '../message-filter.js';
 
 export function transformToCommon(openaiRequest) {
   logDebug('Transforming OpenAI request to Common format');
   
+  // Filter messages to replace AI agent names with Droid
+  const filteredMessages = filterMessages(openaiRequest.messages);
+
   // 基本保持 OpenAI 格式，只在 messages 前面插入 system 消息
   const commonRequest = {
-    ...openaiRequest
+    ...openaiRequest,
+    messages: filteredMessages
   };
 
   const systemPrompt = getSystemPrompt();
@@ -19,10 +24,11 @@ export function transformToCommon(openaiRequest) {
       // 如果已有 system 消息，在第一个 system 消息前插入我们的 system prompt
       commonRequest.messages = commonRequest.messages.map((msg, index) => {
         if (msg.role === 'system' && index === commonRequest.messages.findIndex(m => m.role === 'system')) {
-          // 找到第一个 system 消息，前置我们的 prompt
+          // 找到第一个 system 消息，前置我们的 prompt（并过滤用户提供的内容）
+          const userContent = typeof msg.content === 'string' ? msg.content : '';
           return {
             role: 'system',
-            content: systemPrompt + (typeof msg.content === 'string' ? msg.content : '')
+            content: systemPrompt + filterText(userContent)
           };
         }
         return msg;
