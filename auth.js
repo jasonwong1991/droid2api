@@ -15,7 +15,8 @@ let authFilePath = null;
 let factoryApiKey = null; // From FACTORY_API_KEY environment variable
 
 const REFRESH_URL = 'https://api.workos.com/user_management/authenticate';
-const REFRESH_INTERVAL_HOURS = 6; // Refresh every 6 hours
+const REFRESH_INTERVAL_HOURS = 6; // Base refresh interval (6 hours)
+const REFRESH_JITTER_MINUTES = 30; // Random jitter: ±30 minutes
 const TOKEN_VALID_HOURS = 8; // Token valid for 8 hours
 
 /**
@@ -122,8 +123,45 @@ async function refreshApiKey() {
   }
 
   if (!clientId) {
-    clientId = 'client_01HNM792M5G5G1A2THWPXKFMXB';
-    logDebug(`Using fixed client ID: ${clientId}`);
+    // Try to load client_id from auth file first
+    if (authFilePath && fs.existsSync(authFilePath)) {
+      try {
+        const authData = JSON.parse(fs.readFileSync(authFilePath, 'utf-8'));
+        if (authData.client_id) {
+          clientId = authData.client_id;
+          logDebug(`Using client ID from auth file: ${clientId}`);
+        }
+      } catch (error) {
+        logDebug('Failed to load client_id from auth file', error);
+      }
+    }
+
+    // If still no client_id, generate a new one and save it
+    if (!clientId) {
+      clientId = generateClientId();
+      logDebug(`Generated new client ID: ${clientId}`);
+
+      // Save the generated client_id to auth file for future use
+      if (authFilePath) {
+        try {
+          let authData = {};
+          if (fs.existsSync(authFilePath)) {
+            authData = JSON.parse(fs.readFileSync(authFilePath, 'utf-8'));
+          }
+          authData.client_id = clientId;
+
+          const dir = path.dirname(authFilePath);
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+
+          fs.writeFileSync(authFilePath, JSON.stringify(authData, null, 2), 'utf-8');
+          logDebug(`Saved client ID to ${authFilePath}`);
+        } catch (error) {
+          logError('Failed to save client_id to auth file', error);
+        }
+      }
+    }
   }
 
   logInfo('Refreshing API key...');
@@ -222,7 +260,8 @@ function saveTokens(accessToken, refreshToken) {
 }
 
 /**
- * Check if API key needs refresh (older than 6 hours)
+ * Check if API key needs refresh with random jitter
+ * Base interval: 6 hours ± 30 minutes random jitter
  */
 function shouldRefresh() {
   if (!lastRefreshTime) {
@@ -230,7 +269,14 @@ function shouldRefresh() {
   }
 
   const hoursSinceRefresh = (Date.now() - lastRefreshTime) / (1000 * 60 * 60);
-  return hoursSinceRefresh >= REFRESH_INTERVAL_HOURS;
+
+  // Add random jitter: ±30 minutes (converted to hours)
+  const jitterHours = (Math.random() * REFRESH_JITTER_MINUTES * 2 - REFRESH_JITTER_MINUTES) / 60;
+  const targetInterval = REFRESH_INTERVAL_HOURS + jitterHours;
+
+  logDebug(`Refresh check: ${hoursSinceRefresh.toFixed(2)}h elapsed, target: ${targetInterval.toFixed(2)}h`);
+
+  return hoursSinceRefresh >= targetInterval;
 }
 
 /**

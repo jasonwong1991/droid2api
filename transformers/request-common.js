@@ -1,6 +1,7 @@
 import { logDebug } from '../logger.js';
-import { getSystemPrompt, getUserAgent } from '../config.js';
+import { getSystemPrompt, getUserAgentSync } from '../config.js';
 import { filterMessages, filterText } from '../message-filter.js';
+import { getSdkVersions, getClientEnvironment } from '../version-updater.js';
 
 export function transformToCommon(openaiRequest) {
   logDebug('Transforming OpenAI request to Common format');
@@ -62,19 +63,23 @@ export function getCommonHeaders(authHeader, clientHeaders = {}) {
     'x-factory-client': 'cli',
     'x-session-id': sessionId,
     'x-assistant-message-id': messageId,
-    'user-agent': getUserAgent(),
+    'user-agent': getUserAgentSync(),
     'connection': 'keep-alive'
   };
 
-  // Pass through Stainless SDK headers with defaults
+  // Get dynamic SDK versions and environment
+  const sdkVersions = getSdkVersions();
+  const environment = getClientEnvironment();
+
+  // Pass through Stainless SDK headers with dynamic defaults
   const stainlessDefaults = {
-    'x-stainless-arch': 'x64',
+    'x-stainless-arch': environment.arch,
     'x-stainless-lang': 'js',
-    'x-stainless-os': 'MacOS',
-    'x-stainless-runtime': 'node',
+    'x-stainless-os': environment.os,
+    'x-stainless-runtime': environment.runtime,
     'x-stainless-retry-count': '0',
-    'x-stainless-package-version': '5.23.2',
-    'x-stainless-runtime-version': 'v24.3.0'
+    'x-stainless-package-version': sdkVersions.openai,
+    'x-stainless-runtime-version': sdkVersions.runtime
   };
 
   // Copy Stainless headers from client or use defaults

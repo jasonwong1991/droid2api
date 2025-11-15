@@ -2,11 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { logInfo } from './logger.js';
+import { getFactoryCliVersion } from './version-updater.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let config = null;
+let cachedUserAgent = null;
 
 export function loadConfig() {
   try {
@@ -63,9 +65,26 @@ export function getModelReasoning(modelId) {
   return null;
 }
 
-export function getUserAgent() {
+export async function getUserAgent() {
+  // Return cached value if available
+  if (cachedUserAgent) {
+    return cachedUserAgent;
+  }
+
+  // Get latest version and cache it
+  const version = await getFactoryCliVersion();
+  cachedUserAgent = `factory-cli/${version}`;
+  return cachedUserAgent;
+}
+
+// Synchronous version for backward compatibility (uses cached value)
+export function getUserAgentSync() {
+  if (cachedUserAgent) {
+    return cachedUserAgent;
+  }
+  // Fallback to config or default
   const cfg = getConfig();
-  return cfg.user_agent || 'factory-cli/0.19.3';
+  return cfg.user_agent || 'factory-cli/0.25.2';
 }
 
 export function getProxyConfigs() {

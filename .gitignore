@@ -4,3 +4,5 @@ node_modules/
 .DS_Store
 *.txt
 AGENTS.md
+.version-cache.json
+auth.json
